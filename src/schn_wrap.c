@@ -69,7 +69,7 @@ uint32 schn_wrap(void                 *sec_ctx,
 
     /* Nonce ("pseudo_bytes" call is to be replaced with "bytes"
        once we're ready to properly reseed the generator) */
-    RAND_pseudo_bytes((unsigned char*)nonce, sizeof(nonce));
+    RAND_bytes((unsigned char*)nonce, sizeof(nonce));
 
     memcpy(sess_key, schn_ctx->session_key, 16);
 

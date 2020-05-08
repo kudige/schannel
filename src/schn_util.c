@@ -47,12 +47,11 @@ void schn_sign_digest(unsigned char sess_key[16],
     unsigned char init_buffer[4];
     unsigned char dig[16];
     MD5_CTX ctx;
-    HMAC_CTX hmac_ctx;
+    HMAC_CTX *hmac_ctx;
     unsigned int digest_len;
 
     memset(init_buffer, 0, sizeof(init_buffer));
     memset(&ctx, 0, sizeof(ctx));
-    memset(&hmac_ctx, 0, sizeof(hmac_ctx));
 
     MD5_Init(&ctx);
     MD5_Update(&ctx, init_buffer, 4);
@@ -64,11 +63,12 @@ void schn_sign_digest(unsigned char sess_key[16],
     MD5_Update(&ctx, blob->base, blob->len);
     MD5_Final(dig, &ctx);
 
-    HMAC_Init(&hmac_ctx, (void*)sess_key, 16, EVP_md5());
-    HMAC_Update(&hmac_ctx, (unsigned char*)dig, sizeof(dig));
-    HMAC_Final(&hmac_ctx, (unsigned char*)digest, &digest_len);
+    hmac_ctx = HMAC_CTX_new();
+    HMAC_Init_ex(hmac_ctx, (void*)sess_key, 16, EVP_md5(), NULL);
+    HMAC_Update(hmac_ctx, (unsigned char*)dig, sizeof(dig));
+    HMAC_Final(hmac_ctx, (unsigned char*)digest, &digest_len);
 
-    HMAC_CTX_cleanup(&hmac_ctx);
+    HMAC_CTX_free(hmac_ctx);
 }
 
 
@@ -102,23 +102,24 @@ void schn_sign_update_seqnum(const unsigned char digest[8],
     unsigned char init_buffer[4];
     unsigned char dig[16];
     unsigned char seq_key[16];
-    HMAC_CTX hmac_ctx;
+    HMAC_CTX *hmac_ctx;
     unsigned int dig_len, seq_key_len;
     RC4_KEY rc4_key;
 
     memset(init_buffer, 0, sizeof(init_buffer));
-    memset(&hmac_ctx, 0, sizeof(hmac_ctx));
     memset(&rc4_key, 0, sizeof(rc4_key));
 
-    HMAC_Init(&hmac_ctx, (unsigned char*)sess_key, 16, EVP_md5());
-    HMAC_Update(&hmac_ctx, (unsigned char*)init_buffer, 4);
-    HMAC_Final(&hmac_ctx, (unsigned char*)dig, &dig_len);
-    HMAC_CTX_cleanup(&hmac_ctx);
+    hmac_ctx = HMAC_CTX_new();
+    HMAC_Init_ex(hmac_ctx, (unsigned char*)sess_key, 16, EVP_md5(), NULL);
+    HMAC_Update(hmac_ctx, (unsigned char*)init_buffer, 4);
+    HMAC_Final(hmac_ctx, (unsigned char*)dig, &dig_len);
+    HMAC_CTX_free(hmac_ctx);
 
-    HMAC_Init(&hmac_ctx, (unsigned char*)dig, 16, EVP_md5());
-    HMAC_Update(&hmac_ctx, (unsigned char*)digest, 8);
-    HMAC_Final(&hmac_ctx, (unsigned char*)seq_key, &seq_key_len);
-    HMAC_CTX_cleanup(&hmac_ctx);
+    hmac_ctx = HMAC_CTX_new();
+    HMAC_Init_ex(hmac_ctx, (unsigned char *)dig, 16, EVP_md5(), NULL);
+    HMAC_Update(hmac_ctx, (unsigned char*)digest, 8);
+    HMAC_Final(hmac_ctx, (unsigned char*)seq_key, &seq_key_len);
+        HMAC_CTX_free(hmac_ctx);
 
     RC4_set_key(&rc4_key, sizeof(seq_key), (unsigned char*)seq_key);
     RC4(&rc4_key, 8, (unsigned char*)sequence,(unsigned char*)sequence);
@@ -132,31 +133,31 @@ void schn_seal_generate_key(const unsigned char sess_key[16],
                             unsigned char seal_key[16])
 {
     unsigned char init_buffer[4] = {0, 0, 0, 0};
-    HMAC_CTX hmac_ctx;
+    HMAC_CTX *hmac_ctx;
     unsigned int digest_len, seal_key_len;
     unsigned char key[16];
     unsigned char digest[16];
     uint32 i;
 
     memset(init_buffer, 0, sizeof(init_buffer));
-    memset(&hmac_ctx, 0, sizeof(hmac_ctx));
 
     for (i = 0; i < sizeof(key); i++)
     {
         key[i] = sess_key[i] ^ 0xf0;
     }
 
-    HMAC_Init(&hmac_ctx, (unsigned char*)key, 16, EVP_md5());
-    HMAC_Update(&hmac_ctx, (unsigned char*)init_buffer, 4);
-    HMAC_Final(&hmac_ctx, digest, &digest_len);
-    HMAC_CTX_cleanup(&hmac_ctx);
+    hmac_ctx = HMAC_CTX_new();
+    HMAC_Init_ex(hmac_ctx, (unsigned char*)key, 16, EVP_md5(), NULL);
+    HMAC_Update(hmac_ctx, (unsigned char*)init_buffer, 4);
+    HMAC_Final(hmac_ctx, digest, &digest_len);
+    //HMAC_CTX_free(hmac_ctx);
 
-    memset(&hmac_ctx, 0, sizeof(hmac_ctx));
-
-    HMAC_Init(&hmac_ctx, (unsigned char*)digest, 16, EVP_md5());
-    HMAC_Update(&hmac_ctx, (unsigned char*)seq_number, 8);
-    HMAC_Final(&hmac_ctx, seal_key, &seal_key_len);
-    HMAC_CTX_cleanup(&hmac_ctx);
+    hmac_ctx = HMAC_CTX_new();
+    HMAC_Init_ex(hmac_ctx, (unsigned char *)digest, 16, EVP_md5(), NULL);
+    HMAC_Update(hmac_ctx, (unsigned char*)seq_number, 8);
+    HMAC_Final(hmac_ctx, seal_key, &seal_key_len);
+    //HMAC_CTX_reset(hmac_ctx);
+    //HMAC_CTX_free(hmac_ctx);
 }
 
 

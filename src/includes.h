@@ -30,6 +30,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <swab.h>
 #include <schtypes.h>
 #include <schannel.h>
 #include "schannel_p.h"
