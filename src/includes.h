@@ -39,3 +39,6 @@
 #include <openssl/hmac.h>
 #include <openssl/rc4.h>
 #include <openssl/rand.h>
+#include <openssl/sha.h>
+#include <openssl/aes.h>
+

@@ -33,26 +33,45 @@
 
 #include "includes.h"
 
-
-const unsigned char schannel_sig_sign[] = { 0x77, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00 };
-const unsigned char schannel_sig_seal[] = { 0x77, 0x00, 0x7a, 0x00, 0xff, 0xff, 0x00, 0x00 };
-
+#ifdef AES_ENABLED
+const unsigned char schannel_sig_sign[] = {0x13, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00};
+const unsigned char schannel_sig_seal[] = {0x13, 0x00, 0x1a, 0x00, 0xff, 0xff, 0x00, 0x00};
+#else
+const unsigned char schannel_sig_sign[] = {0x77, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00};
+const unsigned char schannel_sig_seal[] = {0x77, 0x00, 0x7a, 0x00, 0xff, 0xff, 0x00, 0x00};
+#endif
 
 void schn_sign_digest(unsigned char sess_key[16],
                       const unsigned char nonce[8],
                       const unsigned char schannel_sig[8],
                       const struct schn_blob *blob,
-                      unsigned char digest[16])
+                      unsigned char digest[32])
 {
+    unsigned int digest_len;
+
+#ifdef AES_ENABLED
+    HMAC_CTX * hmac_ctx;
+
+    hmac_ctx = HMAC_CTX_new();
+    HMAC_Init_ex(hmac_ctx, (void *)sess_key, 16, EVP_sha256(), NULL);
+    HMAC_Update(hmac_ctx, schannel_sig, 8);
+    if (memcmp((void *)schannel_sig, (void *)schannel_sig_seal, 8) == 0) {
+        printf("%s: detected sigseal\n", __FUNCTION__);
+        HMAC_Update(hmac_ctx, nonce, 8);
+    }
+    HMAC_Update(hmac_ctx, blob->base, blob->len);
+    HMAC_Final(hmac_ctx, (unsigned char *)digest, &digest_len);
+    HMAC_CTX_free(hmac_ctx);
+    printf("%s: digest length %d\n", __FUNCTION__, digest_len);
+
+#else
+    MD5_CTX   ctx;
+    HMAC_CTX *hmac_ctx;
     unsigned char init_buffer[4];
     unsigned char dig[16];
-    MD5_CTX ctx;
-    HMAC_CTX *hmac_ctx;
-    unsigned int digest_len;
 
     memset(init_buffer, 0, sizeof(init_buffer));
     memset(&ctx, 0, sizeof(ctx));
-
     MD5_Init(&ctx);
     MD5_Update(&ctx, init_buffer, 4);
     MD5_Update(&ctx, schannel_sig, 8);
@@ -69,6 +88,7 @@ void schn_sign_digest(unsigned char sess_key[16],
     HMAC_Final(hmac_ctx, (unsigned char*)digest, &digest_len);
 
     HMAC_CTX_free(hmac_ctx);
+#endif    
 }
 
 
@@ -99,11 +119,25 @@ void schn_sign_update_seqnum(const unsigned char digest[8],
                              uint32 *seq_num,
                              unsigned char sequence[8])
 {
+#ifdef AES_ENABLED
+    unsigned char ivec[AES_BLOCK_SIZE];
+    unsigned char enc_seq[8];
+    AES_KEY key_seq;
+    int  num = 0;
+
+    memmove(ivec, digest, 8);
+    memmove(ivec+8, digest, 8);
+
+    AES_set_encrypt_key(sess_key, 128, &key_seq);
+    AES_cfb8_encrypt(sequence, enc_seq, sizeof enc_seq, &key_seq, ivec, &num, AES_ENCRYPT);
+    memmove(sequence, enc_seq, sizeof enc_seq);
+#else
+    unsigned char seq_key[16];
     unsigned char init_buffer[4];
     unsigned char dig[16];
-    unsigned char seq_key[16];
     HMAC_CTX *hmac_ctx;
-    unsigned int dig_len, seq_key_len;
+    unsigned int dig_len;
+    unsigned int seq_key_len;
     RC4_KEY rc4_key;
 
     memset(init_buffer, 0, sizeof(init_buffer));
@@ -123,8 +157,8 @@ void schn_sign_update_seqnum(const unsigned char digest[8],
 
     RC4_set_key(&rc4_key, sizeof(seq_key), (unsigned char*)seq_key);
     RC4(&rc4_key, 8, (unsigned char*)sequence,(unsigned char*)sequence);
-
-    (*seq_num)++;
+#endif
+        (*seq_num)++;
 }
 
 
@@ -132,19 +166,21 @@ void schn_seal_generate_key(const unsigned char sess_key[16],
                             const unsigned char seq_number[8],
                             unsigned char seal_key[16])
 {
+    uint32 i;
+    unsigned char key[16];
+    key[0] = seq_number[0]; // For unused warning
+    for (i = 0; i < sizeof(key); i++) {
+        key[i] = sess_key[i] ^ 0xf0;
+    }
+    memmove(seal_key, key, sizeof key);
+    
+#ifndef AES_ENABLED
     unsigned char init_buffer[4] = {0, 0, 0, 0};
     HMAC_CTX *hmac_ctx;
     unsigned int digest_len, seal_key_len;
-    unsigned char key[16];
     unsigned char digest[16];
-    uint32 i;
 
     memset(init_buffer, 0, sizeof(init_buffer));
-
-    for (i = 0; i < sizeof(key); i++)
-    {
-        key[i] = sess_key[i] ^ 0xf0;
-    }
 
     hmac_ctx = HMAC_CTX_new();
     HMAC_Init_ex(hmac_ctx, (unsigned char*)key, 16, EVP_md5(), NULL);
@@ -158,6 +194,7 @@ void schn_seal_generate_key(const unsigned char sess_key[16],
     HMAC_Final(hmac_ctx, seal_key, &seal_key_len);
     //HMAC_CTX_reset(hmac_ctx);
     //HMAC_CTX_free(hmac_ctx);
+#endif    
 }
 
 

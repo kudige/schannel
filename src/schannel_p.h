@@ -39,7 +39,7 @@ void schn_sign_digest(unsigned char sess_key[16],
                       const unsigned char nonce[8],
                       const unsigned char schannel_sig[8],
                       const struct schn_blob *blob,
-                      unsigned char digest[16]);
+                      unsigned char digest[32]);
 
 void schn_sign_get_seq_number(void *sec_ctx,
                               uint32 sender_flags,

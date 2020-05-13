@@ -36,6 +36,8 @@
 
 #include <schtypes.h>
 
+#define AES_ENABLED 1
+
 extern const unsigned char schannel_sig_sign[];
 extern const unsigned char schannel_sig_seal[];
 
@@ -62,6 +64,9 @@ struct schn_tail {
     uint8           seq_number[8];
     uint8           digest[8];
     uint8           nonce[8];
+#ifdef AES_ENABLED
+    uint8           reserved[24];
+#endif
 };
 
 
