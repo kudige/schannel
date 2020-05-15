@@ -34,7 +34,6 @@
 #ifndef _SCHANNEL_P_H_
 #define _SCHANNEL_P_H_
 
-
 void schn_sign_digest(unsigned char sess_key[16],
                       const unsigned char nonce[8],
                       const unsigned char schannel_sig[8],
@@ -62,5 +61,15 @@ void schn_seal_generate_key(const unsigned char sess_key[16],
 #define schn_s_invalid_credentials       (0x16c9a0e2)  /* rpc_s_invalid_credentials */
 #define schn_s_ok                        (0x00000000)  /* rpc_s_ok */
 
+/* Logging and debugging */
+#define SCHANNEL_ERRLOG
+//#define SCHANNEL_DEBUG
+
+void schn_display_buffer(const char *name, unsigned char *buffer, int length);
+#define debug_printf(fmt, ...) schn_debug_printf("ntlm-plugin:%s:%d - " fmt "\n", __FILE__, __LINE__, __VA_ARGS__)
+#define error_printf(fmt, ...) schn_error_printf("ntlm-plugin:%s:%d Error " fmt "\n", __FILE__, __LINE__, __VA_ARGS__)
+
+void schn_debug_printf(const char *fmt, ...);
+void schn_error_printf(const char *fmt, ...);
 
 #endif /* _SCHANNEL_P_H_ */

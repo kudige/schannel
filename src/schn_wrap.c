@@ -33,29 +33,23 @@
 
 #include "includes.h"
 
-
 /*
  * Wrap the packet prior to sending
  * MS-NRPC 3.3.4.2.1
  */
-void display_buffer(const char *name, unsigned char *buffer, int length);
 
-uint32 schn_wrap(void                 *sec_ctx,
-                 uint32                sec_level,
-                 struct schn_blob     *in,
-                 struct schn_blob     *out,
-                 struct schn_tail     *tail)
-{
-    uint32 status = schn_s_ok;
-    struct schn_auth_ctx *schn_ctx = NULL;
-    unsigned char *schannel_sig = NULL;
-    unsigned char sess_key[16], nonce[8], seq_number[8], digest[32]; // 32 only if AES
-    uint32 sender_flags;
-    unsigned char seal_key[16];
+uint32 schn_wrap(void *sec_ctx, uint32 sec_level, struct schn_blob *in, struct schn_blob *out, struct schn_tail *tail) {
+    uint32                status       = schn_s_ok;
+    struct schn_auth_ctx *schn_ctx     = NULL;
+    unsigned char *       schannel_sig = NULL;
+    unsigned char         sess_key[16], nonce[8], seq_number[8], digest[32]; // 32 only if AES
+    uint32                sender_flags;
+    unsigned char         seal_key[16];
 
-    schn_ctx = (struct schn_auth_ctx*)sec_ctx;
+    schn_ctx = (struct schn_auth_ctx *)sec_ctx;
 
-    printf("** came here\n");
+    schn_display_buffer("wrap: session_key: ", schn_ctx->session_key, 16);
+
     memset(sess_key, 0, sizeof sess_key);
     memset(nonce, 0, sizeof nonce);
     memset(seq_number, 0, sizeof seq_number);
@@ -72,21 +66,18 @@ uint32 schn_wrap(void                 *sec_ctx,
 
     /* Nonce ("pseudo_bytes" call is to be replaced with "bytes"
        once we're ready to properly reseed the generator) */
-    RAND_bytes((unsigned char*)nonce, sizeof(nonce));
+    RAND_bytes((unsigned char *)nonce, sizeof(nonce));
 
     memcpy(sess_key, schn_ctx->session_key, 16);
-
-    display_buffer("nonce: ", nonce, sizeof nonce);
-    display_buffer("Schan_wrap sesskey: ", sess_key, 16);
 
     /* Select proper schannel signature */
     switch (sec_level) {
     case SCHANNEL_SEC_LEVEL_INTEGRITY:
-        schannel_sig = (unsigned char*)schannel_sig_sign;
+        schannel_sig = (unsigned char *)schannel_sig_sign;
         break;
 
     case SCHANNEL_SEC_LEVEL_PRIVACY:
-        schannel_sig = (unsigned char*)schannel_sig_seal;
+        schannel_sig = (unsigned char *)schannel_sig_seal;
         break;
 
     default:
@@ -106,19 +97,19 @@ uint32 schn_wrap(void                 *sec_ctx,
         schn_seal_generate_key(schn_ctx->session_key, seq_number, seal_key);
 
 #ifdef AES_ENABLED
-        AES_KEY key_data;
-        unsigned  char ivec[AES_BLOCK_SIZE];
-        unsigned char enc_nonce[sizeof(nonce)];
+        AES_KEY        key_data;
+        unsigned char  ivec[AES_BLOCK_SIZE];
+        unsigned char  enc_nonce[sizeof(nonce)];
         unsigned char *enc_data = NULL;
-        int num = 0;
+        int            num      = 0;
 
-        // Encrypt the Nonce
+// Encrypt the Nonce
         memset(enc_nonce, 0, sizeof enc_nonce);
         memmove(ivec, seq_number, 8);
         memmove(ivec+8, seq_number, 8);
-
-        AES_set_encrypt_key(seal_key, sizeof(seal_key)*8, &key_data);
+        AES_set_encrypt_key(seal_key, sizeof(seal_key) * 8, &key_data);
         AES_cfb8_encrypt(nonce, enc_nonce, sizeof(nonce), &key_data, ivec, &num, AES_ENCRYPT);
+
         memmove(nonce, enc_nonce, sizeof nonce);
 
         // Encrypt the data
@@ -127,7 +118,7 @@ uint32 schn_wrap(void                 *sec_ctx,
             status = schn_s_no_memory;
             goto error;
         }
-        //num = 0;
+        // num = 0;
         AES_cfb8_encrypt(out->base, enc_data, out->len, &key_data, ivec, &num, AES_ENCRYPT);
         memmove(out->base, enc_data, out->len);
         free(enc_data);
@@ -138,42 +129,30 @@ uint32 schn_wrap(void                 *sec_ctx,
         memset(&key_data, 0, sizeof(key_data));
 
         /* Encrypt the key */
-        RC4_set_key(&key_nonce, sizeof(seal_key), (unsigned char*)seal_key);
-        RC4(&key_nonce, sizeof(nonce), (unsigned char*)nonce,
-            (unsigned char*)nonce);
+        RC4_set_key(&key_nonce, sizeof(seal_key), (unsigned char *)seal_key);
+        RC4(&key_nonce, sizeof(nonce), (unsigned char *)nonce, (unsigned char *)nonce);
 
         /* Encrypt the payload */
-        RC4_set_key(&key_data, sizeof(seal_key), (unsigned char*)seal_key);
-        RC4(&key_data, out->len, (unsigned char*)out->base,
-            (unsigned char*)out->base);
-#endif            
+        RC4_set_key(&key_data, sizeof(seal_key), (unsigned char *)seal_key);
+        RC4(&key_data, out->len, (unsigned char *)out->base, (unsigned char *)out->base);
+#endif
     }
 
     /* Sequence number */
     schn_sign_update_seqnum(digest, sess_key, &schn_ctx->seq_num, seq_number);
 
-    memcpy(tail->signature,  schannel_sig, 8);
-    memcpy(tail->digest,     digest,       8);
-    memcpy(tail->seq_number, seq_number,   8);
-    memcpy(tail->nonce,      nonce,        8);
+    memcpy(tail->signature, schannel_sig, 8);
+    memcpy(tail->digest, digest, 8);
+    memcpy(tail->seq_number, seq_number, 8);
+    memcpy(tail->nonce, nonce, 8);
     memset(tail->reserved, 0, sizeof tail->reserved);
-    
+
 cleanup:
     return status;
 
 error:
     goto cleanup;
 }
-
-void display_buffer(const char *name, unsigned char *buffer, int length) {
-    int i;
-    printf("Buffer %s: ", name);
-    for (i = 0; i < length; i++) {
-        printf(" %02x", (int)buffer[i]);
-    }
-    printf("\n");
-}
-
 
 /*
 local variables:

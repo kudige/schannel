@@ -209,6 +209,45 @@ void schn_free_blob(struct schn_blob *b)
     b->len  = 0;
 }
 
+void schn_debug_printf(const char *fmt, ...) {
+#ifdef SCHANNEL_DEBBUG
+    va_list ap;
+
+    va_start(ap, fmt);
+    vprintf(fmt, ap);
+    va_end(ap);
+#else
+    fmt = NULL;
+#endif
+}
+
+void schn_error_printf(const char *fmt, ...) {
+#ifdef SCHANNEL_ERRLOG
+    va_list ap;
+
+    va_start(ap, fmt);
+    vprintf(fmt, ap);
+    va_end(ap);
+#else
+    fmt = NULL;    
+#endif
+}
+
+void schn_display_buffer(const char *name, unsigned char *buffer, int length) {
+#ifdef SCHANNEL_DEBUG
+    int i;
+    printf("Buffer %s: ", name);
+    for (i = 0; i < length; i++) {
+        printf(" %02x", (int)buffer[i]);
+    }
+    printf("\n");
+#else
+// For warnings
+    name   = NULL;
+    buffer = NULL;
+    length = 0;
+#endif
+}
 
 /*
 local variables:
