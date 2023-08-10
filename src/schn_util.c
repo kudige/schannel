@@ -209,6 +209,8 @@ void schn_free_blob(struct schn_blob *b)
     b->len  = 0;
 }
 
+
+#pragma GCC diagnostic ignored "-Wunused-but-set-parameter"
 void schn_debug_printf(const char *fmt, ...) {
 #ifdef SCHANNEL_DEBBUG
     va_list ap;
@@ -233,6 +235,7 @@ void schn_error_printf(const char *fmt, ...) {
 #endif
 }
 
+#pragma GCC diagnostic ignored "-Wunused-but-set-parameter"
 void schn_display_buffer(const char *name, unsigned char *buffer, int length) {
 #ifdef SCHANNEL_DEBUG
     int i;
