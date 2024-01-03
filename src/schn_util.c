@@ -217,7 +217,7 @@ void schn_debug_printf(const char *fmt, ...) {
     vprintf(fmt, ap);
     va_end(ap);
 #else
-    fmt = NULL;
+    fmt = fmt+1;
 #endif
 }
 
@@ -229,7 +229,7 @@ void schn_error_printf(const char *fmt, ...) {
     vprintf(fmt, ap);
     va_end(ap);
 #else
-    fmt = NULL;    
+    fmt = fmt+1;    
 #endif
 }
 
@@ -243,9 +243,9 @@ void schn_display_buffer(const char *name, unsigned char *buffer, int length) {
     printf("\n");
 #else
 // For warnings
-    name   = NULL;
-    buffer = NULL;
-    length = 0;
+    name   = name+1;
+    buffer = buffer+1;
+    length = length+1;
 #endif
 }
 
