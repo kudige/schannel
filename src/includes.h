@@ -42,3 +42,8 @@
 #include <openssl/sha.h>
 #include <openssl/aes.h>
 
+
+#include <limits.h>
+#include <openssl/evp.h>
+#include <openssl/core_names.h>
+#include <openssl/params.h>

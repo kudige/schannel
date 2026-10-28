@@ -86,7 +86,10 @@ uint32 schn_wrap(void *sec_ctx, uint32 sec_level, struct schn_blob *in, struct s
     }
 
     /* Digest */
-    schn_sign_digest(sess_key, nonce, schannel_sig, out, digest);
+    if (!schn_sign_digest(sess_key, nonce, schannel_sig, out, digest)) {
+        status = schn_s_invalid_credentials;
+        goto error;
+    }
 
     sender_flags = schn_ctx->sender_flags;
     schn_sign_get_seq_number(schn_ctx, sender_flags, seq_number);
@@ -97,31 +100,15 @@ uint32 schn_wrap(void *sec_ctx, uint32 sec_level, struct schn_blob *in, struct s
         schn_seal_generate_key(schn_ctx->session_key, seq_number, seal_key);
 
 #ifdef AES_ENABLED
-        AES_KEY        key_data;
-        unsigned char  ivec[AES_BLOCK_SIZE];
-        unsigned char  enc_nonce[sizeof(nonce)];
-        unsigned char *enc_data = NULL;
-        int            num      = 0;
+        unsigned char ivec[16];
 
-// Encrypt the Nonce
-        memset(enc_nonce, 0, sizeof enc_nonce);
-        memmove(ivec, seq_number, 8);
-        memmove(ivec+8, seq_number, 8);
-        AES_set_encrypt_key(seal_key, sizeof(seal_key) * 8, &key_data);
-        AES_cfb8_encrypt(nonce, enc_nonce, sizeof(nonce), &key_data, ivec, &num, AES_ENCRYPT);
-
-        memmove(nonce, enc_nonce, sizeof nonce);
-
-        // Encrypt the data
-        enc_data = malloc(out->len);
-        if (!enc_data) {
-            status = schn_s_no_memory;
+        memcpy(ivec, seq_number, 8);
+        memcpy(ivec + 8, seq_number, 8);
+        if (!schn_aes_crypt(seal_key, ivec, nonce, sizeof(nonce),
+                            out->base, out->len, 1)) {
+            status = schn_s_invalid_credentials;
             goto error;
         }
-        // num = 0;
-        AES_cfb8_encrypt(out->base, enc_data, out->len, &key_data, ivec, &num, AES_ENCRYPT);
-        memmove(out->base, enc_data, out->len);
-        free(enc_data);
 #else
         RC4_KEY key_nonce, key_data;
 
@@ -139,7 +126,10 @@ uint32 schn_wrap(void *sec_ctx, uint32 sec_level, struct schn_blob *in, struct s
     }
 
     /* Sequence number */
-    schn_sign_update_seqnum(digest, sess_key, &schn_ctx->seq_num, seq_number);
+    if (!schn_sign_update_seqnum(digest, sess_key, &schn_ctx->seq_num, seq_number)) {
+        status = schn_s_invalid_credentials;
+        goto error;
+    }
 
     memcpy(tail->signature, schannel_sig, 8);
     memcpy(tail->digest, digest, 8);

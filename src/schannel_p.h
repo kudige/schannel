@@ -34,7 +34,11 @@
 #ifndef _SCHANNEL_P_H_
 #define _SCHANNEL_P_H_
 
-void schn_sign_digest(unsigned char sess_key[16],
+int schn_aes_crypt(const unsigned char key[16], const unsigned char iv[16],
+                   unsigned char *first, size_t first_len,
+                   unsigned char *second, size_t second_len, int encrypt);
+
+int schn_sign_digest(unsigned char sess_key[16],
                       const unsigned char nonce[8],
                       const unsigned char schannel_sig[8],
                       const struct schn_blob *blob,
@@ -44,7 +48,7 @@ void schn_sign_get_seq_number(void *sec_ctx,
                               uint32 sender_flags,
                               uint8 seq_number[8]);
 
-void schn_sign_update_seqnum(const unsigned char digest[8],
+int schn_sign_update_seqnum(const unsigned char digest[8],
                              const unsigned char sess_key[16],
                              uint32 *seq_num,
                              unsigned char sequence[8]);

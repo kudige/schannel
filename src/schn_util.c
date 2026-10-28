@@ -41,30 +41,69 @@ const unsigned char schannel_sig_sign[] = {0x77, 0x00, 0xff, 0xff, 0xff, 0xff, 0
 const unsigned char schannel_sig_seal[] = {0x77, 0x00, 0x7a, 0x00, 0xff, 0xff, 0x00, 0x00};
 #endif
 
-void schn_sign_digest(unsigned char sess_key[16],
+#ifdef AES_ENABLED
+/* Nonce and payload form one continuous CFB8 stream. */
+int schn_aes_crypt(const unsigned char key[16], const unsigned char iv[16],
+                   unsigned char *first, size_t first_len,
+                   unsigned char *second, size_t second_len, int encrypt)
+{
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    unsigned char final[EVP_MAX_BLOCK_LENGTH];
+    unsigned char *parts[] = {first, second};
+    size_t lengths[] = {first_len, second_len};
+    int written, i;
+    int ok = ctx && EVP_CipherInit_ex(ctx, EVP_aes_128_cfb8(), NULL,
+                                     key, iv, encrypt) == 1;
+
+    for (i = 0; ok && i < 2; i++) {
+        while (ok && lengths[i]) {
+            int chunk = lengths[i] > INT_MAX ? INT_MAX : (int)lengths[i];
+            ok = EVP_CipherUpdate(ctx, parts[i], &written, parts[i], chunk) == 1 &&
+                 written == chunk;
+            parts[i] += chunk;
+            lengths[i] -= chunk;
+        }
+    }
+    if (ok) {
+        ok = EVP_CipherFinal_ex(ctx, final, &written) == 1 && written == 0;
+    }
+    EVP_CIPHER_CTX_free(ctx);
+    return ok;
+}
+#endif
+
+
+int schn_sign_digest(unsigned char sess_key[16],
                       const unsigned char nonce[8],
                       const unsigned char schannel_sig[8],
                       const struct schn_blob *blob,
                       unsigned char digest[32])
 {
-    unsigned int digest_len;
-
 #ifdef AES_ENABLED
-    HMAC_CTX * hmac_ctx;
+    EVP_MAC *mac = EVP_MAC_fetch(NULL, "HMAC", NULL);
+    EVP_MAC_CTX *ctx = mac ? EVP_MAC_CTX_new(mac) : NULL;
+    char name[] = "SHA256";
+    OSSL_PARAM params[] = {
+        OSSL_PARAM_utf8_string(OSSL_MAC_PARAM_DIGEST, name, 0),
+        OSSL_PARAM_END
+    };
+    size_t length = 0;
+    int ok = ctx && EVP_MAC_init(ctx, sess_key, 16, params) == 1 &&
+        EVP_MAC_update(ctx, schannel_sig, 8) == 1;
 
-    hmac_ctx = HMAC_CTX_new();
-    HMAC_Init_ex(hmac_ctx, (void *)sess_key, 16, EVP_sha256(), NULL);
-    HMAC_Update(hmac_ctx, schannel_sig, 8);
-    if (memcmp((void *)schannel_sig, (void *)schannel_sig_seal, 8) == 0) {
-        printf("%s: detected sigseal\n", __FUNCTION__);
-        HMAC_Update(hmac_ctx, nonce, 8);
+    if (ok && memcmp(schannel_sig, schannel_sig_seal, 8) == 0) {
+        ok = EVP_MAC_update(ctx, nonce, 8) == 1;
     }
-    HMAC_Update(hmac_ctx, blob->base, blob->len);
-    HMAC_Final(hmac_ctx, (unsigned char *)digest, &digest_len);
-    HMAC_CTX_free(hmac_ctx);
-    printf("%s: digest length %d\n", __FUNCTION__, digest_len);
+    if (ok) {
+        ok = EVP_MAC_update(ctx, blob->base, blob->len) == 1 &&
+            EVP_MAC_final(ctx, digest, &length, 32) == 1 && length == 32;
+    }
+    EVP_MAC_CTX_free(ctx);
+    EVP_MAC_free(mac);
+    return ok;
 
 #else
+    unsigned int digest_len;
     MD5_CTX   ctx;
     HMAC_CTX *hmac_ctx;
     unsigned char init_buffer[4];
@@ -88,6 +127,7 @@ void schn_sign_digest(unsigned char sess_key[16],
     HMAC_Final(hmac_ctx, (unsigned char*)digest, &digest_len);
 
     HMAC_CTX_free(hmac_ctx);
+    return 1;
 #endif    
 }
 
@@ -114,23 +154,20 @@ void schn_sign_get_seq_number(void *sec_ctx,
 }
 
 
-void schn_sign_update_seqnum(const unsigned char digest[8],
+int schn_sign_update_seqnum(const unsigned char digest[8],
                              const unsigned char sess_key[16],
                              uint32 *seq_num,
                              unsigned char sequence[8])
 {
 #ifdef AES_ENABLED
-    unsigned char ivec[AES_BLOCK_SIZE];
-    unsigned char enc_seq[8];
-    AES_KEY key_seq;
-    int  num = 0;
+    unsigned char ivec[16];
 
-    memmove(ivec, digest, 8);
-    memmove(ivec+8, digest, 8);
+    memcpy(ivec, digest, 8);
+    memcpy(ivec + 8, digest, 8);
+    if (!schn_aes_crypt(sess_key, ivec, sequence, 8, NULL, 0, 1)) {
+        return 0;
+    }
 
-    AES_set_encrypt_key(sess_key, 128, &key_seq);
-    AES_cfb8_encrypt(sequence, enc_seq, sizeof enc_seq, &key_seq, ivec, &num, AES_ENCRYPT);
-    memmove(sequence, enc_seq, sizeof enc_seq);
 #else
     unsigned char seq_key[16];
     unsigned char init_buffer[4];
@@ -158,7 +195,8 @@ void schn_sign_update_seqnum(const unsigned char digest[8],
     RC4_set_key(&rc4_key, sizeof(seq_key), (unsigned char*)seq_key);
     RC4(&rc4_key, 8, (unsigned char*)sequence,(unsigned char*)sequence);
 #endif
-        (*seq_num)++;
+    (*seq_num)++;
+    return 1;
 }
 
 

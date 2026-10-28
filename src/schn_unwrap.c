@@ -100,32 +100,15 @@ uint32 schn_unwrap(void                 *sec_ctx,
         schn_seal_generate_key(schn_ctx->session_key, tail->seq_number, seal_key);
 
 #ifdef AES_ENABLED
-        AES_KEY        key_data;
-        unsigned char  ivec[AES_BLOCK_SIZE];
-        unsigned char  enc_nonce[sizeof(tail->nonce)];
-        unsigned char *enc_data = NULL;
-        int            num      = 0;
+        unsigned char ivec[16];
 
-        // Encrypt the Nonce
-        memset(enc_nonce, 0, sizeof enc_nonce);
-        memmove(ivec, seq_number, 8);
-        memmove(ivec + 8, seq_number, 8);
-        AES_set_encrypt_key(seal_key, sizeof(seal_key) * 8, &key_data);
-        AES_cfb8_encrypt(tail->nonce, enc_nonce, sizeof(enc_nonce), &key_data, ivec, &num, AES_DECRYPT);
-
-        memmove(tail->nonce, enc_nonce, sizeof enc_nonce);
-
-        // Encrypt the data
-        enc_data = malloc(out->len);
-        if (!enc_data) {
-            status = schn_s_no_memory;
+        memcpy(ivec, seq_number, 8);
+        memcpy(ivec + 8, seq_number, 8);
+        if (!schn_aes_crypt(seal_key, ivec, tail->nonce, sizeof(tail->nonce),
+                            out->base, out->len, 0)) {
+            status = schn_s_invalid_credentials;
             goto error;
         }
-        // num = 0;
-        AES_cfb8_encrypt(out->base, enc_data, out->len, &key_data, ivec, &num, AES_DECRYPT);
-        memmove(out->base, enc_data, out->len);
-        free(enc_data);
-
 #else
         RC4_KEY key_nonce, key_data;
 
@@ -145,9 +128,11 @@ uint32 schn_unwrap(void                 *sec_ctx,
     }
 
     /* check the packet payload digest */
-    schn_sign_digest(schn_ctx->session_key,
-                     tail->nonce, schannel_sig,
-                     out, digest);
+    if (!schn_sign_digest(schn_ctx->session_key, tail->nonce,
+                          schannel_sig, out, digest)) {
+        status = schn_s_invalid_credentials;
+        goto error;
+    }
 
     if (memcmp((void*)tail->digest,
                (void*)digest,
@@ -163,7 +148,10 @@ uint32 schn_unwrap(void                 *sec_ctx,
 
     /* decode received sequence number and compare the result
        with expected sequence number */
-    schn_sign_update_seqnum(tail->digest, schn_ctx->session_key, &schn_ctx->seq_num, seq_number);
+    if (!schn_sign_update_seqnum(tail->digest, schn_ctx->session_key, &schn_ctx->seq_num, seq_number)) {
+        status = schn_s_invalid_credentials;
+        goto error;
+    }
 
     if (memcmp((void *)tail->seq_number, (void *)seq_number, sizeof(tail->seq_number))) {
         error_printf("%s seq check failed: ctx->seq_num %d\n", __FUNCTION__, schn_ctx->seq_num);
